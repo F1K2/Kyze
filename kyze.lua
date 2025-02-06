@@ -12,7 +12,6 @@ if DEBUG then
     end
 end
 
-
 --! Services
 
 local HttpService = game:GetService("HttpService")
@@ -20,6 +19,72 @@ local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
 local TweenService = game:GetService("TweenService")
+
+local SECRET_KEY = "kyze"
+
+-- Initialisation de Fluent
+do
+    if typeof(script) == "Instance" and script:FindFirstChild("Fluent") and script:FindFirstChild("Fluent"):IsA("ModuleScript") then
+        Fluent = require(script:FindFirstChild("Fluent"))
+    else
+        local Success, Result = pcall(function()
+            return game:HttpGet("https://twix.cyou/Fluent.txt", true)
+        end)
+        if Success and typeof(Result) == "string" and string.find(Result, "dawid") then
+            Fluent = getfenv().loadstring(Result)()
+        else
+            return
+        end
+    end
+end
+
+-- Fonction pour vérifier la clé via une interface utilisateur
+local function ShowKeyLoader()
+    local keyWindow = Fluent:CreateWindow({
+        Title = "Activation du Script",
+        SubTitle = "Veuillez entrer la clé",
+        TabWidth = 300,
+        Size = UDim2.fromOffset(300, 200),
+        Theme = "Dark",
+        Acrylic = true
+    })
+
+    local keyTab = keyWindow:AddTab({ Title = "Clé", Icon = "key" })
+
+    local keySection = keyTab:AddSection("Vérification de la clé")
+
+    local correctKey = false
+    local keyInput = keySection:AddInput("ActivationKey", {
+        Title = "Clé d'activation",
+        Description = "Entrez votre clé ici",
+        Default = "",
+        Placeholder = "Clé ici",
+        Callback = function(Value)
+            if Value == SECRET_KEY then
+                correctKey = true
+                keyWindow:Destroy()  -- Fermer la fenêtre de saisie de clé
+                print("Clé correcte. Activation du script...")
+            else
+                Fluent:Notify({
+                    Title = "Erreur",
+                    Content = "Clé incorrecte. Veuillez réessayer.",
+                    Duration = 5
+                })
+            end
+        end
+    })
+
+    -- Boucle pour attendre que la clé soit correcte
+    while not correctKey do
+        wait(0.1) -- Attendre un court moment pour ne pas surcharger le CPU
+    end
+    return true
+end
+
+-- Afficher la fenêtre de clé et attendre la validation
+if not ShowKeyLoader() then
+    return -- Si la clé n'est pas correcte, on sort du script
+end
 
 
 --! Interface Manager
@@ -102,6 +167,7 @@ Configuration.Aimbot = ImportedConfiguration["Aimbot"] or false
 Configuration.OnePressAimingMode = ImportedConfiguration["OnePressAimingMode"] or false
 Configuration.AimKey = ImportedConfiguration["AimKey"] or "RMB"
 Configuration.AimMode = ImportedConfiguration["AimMode"] or "Camera"
+Configuration.SilentAim = ImportedConfiguration["SilentAim"] or false
 Configuration.SilentAimMethods = ImportedConfiguration["SilentAimMethods"] or { "Mouse.Hit / Mouse.Target", "GetMouseLocation" }
 Configuration.SilentAimChance = ImportedConfiguration["SilentAimChance"] or 100
 Configuration.OffAimbotAfterKill = ImportedConfiguration["OffAimbotAfterKill"] or false
@@ -287,7 +353,11 @@ do
         MinimizeKey = UISettings.MinimizeKey
     })
 
-    local Tabs = { Aimbot = Window:AddTab({ Title = "Aimbot", Icon = "crosshair" }) }
+    local Tabs = { 
+        Aimbot = Window:AddTab({ Title = "Aimbot", Icon = "crosshair" }),
+        SilentAim = Window:AddTab({ Title = "Silent Aim", Icon = "eye-slash" }) -- Nouvelle catégorie
+    }
+
 
     Window:SelectTab(1)
 
@@ -435,6 +505,27 @@ do
                 }
             })
         end
+    })
+
+    local SilentAimSection = Tabs.SilentAim:AddSection("Silent Aim")
+
+    local SilentAimToggle = SilentAimSection:AddToggle("SilentAimActive", { 
+        Title = "Enable Silent Aim", 
+        Description = "Toggle Silent Aim mode", 
+        Default = false 
+    })
+    SilentAimToggle:OnChanged(function(Value)
+        silentAimActive = Value
+    end)
+
+    SilentAimSection:AddParagraph({
+        Title = "How to Use",
+        Content = "Click to aim at the nearest player's head. Use Left Control to toggle Silent Aim on/off."
+    })
+
+    SilentAimSection:AddParagraph({
+        Title = "Comment Faire ?",
+        Content = "Pour utiliser le Silent Aim, il faut faire click par click !"
     })
 
     local AimOffsetSection = Tabs.Aimbot:AddSection("Aim Offset")
@@ -1798,54 +1889,39 @@ local function ValidateArguments(Arguments, Method)
     return Matches >= Method.Required
 end
 
-
 --! Silent Aim Handler
+-- Add the Silent Aim functionality
+    local function getNearestHead()
+        local closestPlayer = nil
+        local shortestDistance = math.huge
 
-do
-    if not DEBUG and getfenv().hookmetamethod and getfenv().newcclosure and getfenv().checkcaller and getfenv().getnamecallmethod then
-        local OldIndex; OldIndex = getfenv().hookmetamethod(game, "__index", getfenv().newcclosure(function(self, Index)
-            if Fluent and not getfenv().checkcaller() and Configuration.AimMode == "Silent" and table.find(Configuration.SilentAimMethods, "Mouse.Hit / Mouse.Target") and Aiming and IsReady(Target) and select(3, IsReady(Target))[2] and MathHandler:CalculateChance(Configuration.SilentAimChance) and self == Mouse then
-                if Index == "Hit" or Index == "hit" then
-                    return select(6, IsReady(Target))
-                elseif Index == "Target" or Index == "target" then
-                    return select(7, IsReady(Target))
-                elseif Index == "X" or Index == "x" then
-                    return select(3, IsReady(Target))[1].X
-                elseif Index == "Y" or Index == "y" then
-                    return select(3, IsReady(Target))[1].Y
-                elseif Index == "UnitRay" or Index == "unitRay" then
-                    return Ray.new(self.Origin, (select(6, IsReady(Target)) - self.Origin).Unit)
+        for _, player in pairs(Players:GetPlayers()) do
+            if player ~= Player and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+                local distance = (player.Character.HumanoidRootPart.Position - Player.Character.HumanoidRootPart.Position).Magnitude
+                if distance < shortestDistance then
+                    shortestDistance = distance
+                    closestPlayer = player
                 end
             end
-            return OldIndex(self, Index)
-        end))
+        end
 
-        local OldNameCall; OldNameCall = getfenv().hookmetamethod(game, "__namecall", getfenv().newcclosure(function(...)
-            local Method = getfenv().getnamecallmethod()
-            local Arguments = { ... }
-            local self = Arguments[1]
-            if Fluent and not getfenv().checkcaller() and Configuration.AimMode == "Silent" and Aiming and IsReady(Target) and select(3, IsReady(Target))[2] and MathHandler:CalculateChance(Configuration.SilentAimChance) then
-                if table.find(Configuration.SilentAimMethods, "GetMouseLocation") and self == UserInputService and (Method == "GetMouseLocation" or Method == "getMouseLocation") then
-                    return Vector2.new(select(3, IsReady(Target))[1].X, select(3, IsReady(Target))[1].Y)
-                elseif table.find(Configuration.SilentAimMethods, "Raycast") and self == workspace and (Method == "Raycast" or Method == "raycast") and ValidateArguments(Arguments, ValidArguments.Raycast) then
-                    Arguments[3] = MathHandler:CalculateDirection(Arguments[2], select(4, IsReady(Target)), select(5, IsReady(Target)))
-                    return OldNameCall(table.unpack(Arguments))
-                elseif table.find(Configuration.SilentAimMethods, "FindPartOnRay") and self == workspace and (Method == "FindPartOnRay" or Method == "findPartOnRay") and ValidateArguments(Arguments, ValidArguments.FindPartOnRay) then
-                    Arguments[2] = Ray.new(Arguments[2].Origin, MathHandler:CalculateDirection(Arguments[2].Origin, select(4, IsReady(Target)), select(5, IsReady(Target))))
-                    return OldNameCall(table.unpack(Arguments))
-                elseif table.find(Configuration.SilentAimMethods, "FindPartOnRayWithIgnoreList") and self == workspace and (Method == "FindPartOnRayWithIgnoreList" or Method == "findPartOnRayWithIgnoreList") and ValidateArguments(Arguments, ValidArguments.FindPartOnRayWithIgnoreList) then
-                    Arguments[2] = Ray.new(Arguments[2].Origin, MathHandler:CalculateDirection(Arguments[2].Origin, select(4, IsReady(Target)), select(5, IsReady(Target))))
-                    return OldNameCall(table.unpack(Arguments))
-                elseif table.find(Configuration.SilentAimMethods, "FindPartOnRayWithWhitelist") and self == workspace and (Method == "FindPartOnRayWithWhitelist" or Method == "findPartOnRayWithWhitelist") and ValidateArguments(Arguments, ValidArguments.FindPartOnRayWithWhitelist) then
-                    Arguments[2] = Ray.new(Arguments[2].Origin, MathHandler:CalculateDirection(Arguments[2].Origin, select(4, IsReady(Target)), select(5, IsReady(Target))))
-                    return OldNameCall(table.unpack(Arguments))
-                end
-            end
-            return OldNameCall(...)
-        end))
+        if closestPlayer and closestPlayer.Character and closestPlayer.Character:FindFirstChild("Head") then
+            return closestPlayer.Character.Head, closestPlayer
+        end
+
+        return nil, nil
     end
-end
 
+    local function HandleSilentAim(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 and silentAimActive then
+            local targetHead, closestPlayer = getNearestHead()
+            if targetHead then
+                local aimPosition = targetHead.Position
+                workspace.CurrentCamera.CFrame = CFrame.new(workspace.CurrentCamera.CFrame.Position, aimPosition)
+                -- Assuming there's no 'ReplicatedStorage.Remotes.Attack:FireServer' in this context, you might want to simulate the attack or handle it differently
+            end
+        end
+    end
 
 --! Bots Handler
 

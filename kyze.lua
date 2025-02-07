@@ -20,8 +20,6 @@ local UserInputService = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
 local TweenService = game:GetService("TweenService")
 
-local SECRET_KEY = "kyze"
-
 -- Initialisation de Fluent
 do
     if typeof(script) == "Instance" and script:FindFirstChild("Fluent") and script:FindFirstChild("Fluent"):IsA("ModuleScript") then
@@ -37,55 +35,6 @@ do
         end
     end
 end
-
--- Fonction pour vérifier la clé via une interface utilisateur
-local function ShowKeyLoader()
-    local keyWindow = Fluent:CreateWindow({
-        Title = "Activation du Script",
-        SubTitle = "Veuillez entrer la clé",
-        TabWidth = 300,
-        Size = UDim2.fromOffset(300, 200),
-        Theme = "Dark",
-        Acrylic = true
-    })
-
-    local keyTab = keyWindow:AddTab({ Title = "Clé", Icon = "key" })
-
-    local keySection = keyTab:AddSection("Vérification de la clé")
-
-    local correctKey = false
-    local keyInput = keySection:AddInput("ActivationKey", {
-        Title = "Clé d'activation",
-        Description = "Entrez votre clé ici",
-        Default = "",
-        Placeholder = "Clé ici",
-        Callback = function(Value)
-            if Value == SECRET_KEY then
-                correctKey = true
-                keyWindow:Destroy()  -- Fermer la fenêtre de saisie de clé
-                print("Clé correcte. Activation du script...")
-            else
-                Fluent:Notify({
-                    Title = "Erreur",
-                    Content = "Clé incorrecte. Veuillez réessayer.",
-                    Duration = 5
-                })
-            end
-        end
-    })
-
-    -- Boucle pour attendre que la clé soit correcte
-    while not correctKey do
-        wait(0.1) -- Attendre un court moment pour ne pas surcharger le CPU
-    end
-    return true
-end
-
--- Afficher la fenêtre de clé et attendre la validation
-if not ShowKeyLoader() then
-    return -- Si la clé n'est pas correcte, on sort du script
-end
-
 
 --! Interface Manager
 
@@ -345,7 +294,7 @@ end)
 do
     local Window = Fluent:CreateWindow({
         Title = string.format("%s <b><i>%s</i></b>", string.format(MonthlyLabels[os.date("*t").month], "Kyze"), #Status > 0 and Status or "🔥PAID🔥"),
-        SubTitle = "By @Shadow & Kazik's",
+        SubTitle = "By Shadow & Kazik's",
         TabWidth = UISettings.TabWidth,
         Size = UDim2.fromOffset(table.unpack(UISettings.Size)),
         Theme = UISettings.Theme,
@@ -355,7 +304,8 @@ do
 
     local Tabs = { 
         Aimbot = Window:AddTab({ Title = "Aimbot", Icon = "crosshair" }),
-        SilentAim = Window:AddTab({ Title = "Silent Aim", Icon = "eye-slash" }) -- Nouvelle catégorie
+        SilentAim = Window:AddTab({ Title = "Silent Aim", Icon = "eye-slash" }), -- Nouvelle catégorie
+        Misc = Window:AddTab({ Title = "Misc", Icon = "eye-slash" })
     }
 
 
@@ -514,9 +464,7 @@ do
         Description = "Toggle Silent Aim mode", 
         Default = false 
     })
-    SilentAimToggle:OnChanged(function(Value)
-        silentAimActive = Value
-    end)
+
 
     SilentAimSection:AddParagraph({
         Title = "How to Use",
@@ -527,6 +475,83 @@ do
         Title = "Comment Faire ?",
         Content = "Pour utiliser le Silent Aim, il faut faire click par click !"
     })
+
+    local MiscSection = Tabs.Misc:AddSection("Misc")
+
+    local MiscToggle = MiscSection:AddToggle("infinite jump", {
+        Title = "infinite jump",
+        Description = "infinite jump"
+    })
+    
+    MiscToggle:OnChanged(function(Value)
+        -- Toggle infinite jump on or off
+        _G.infinjump = not _G.infinjump
+    
+        -- Ensure the script runs only once to save resources
+        if _G.infinJumpStarted == nil then
+            _G.infinJumpStarted = true
+        
+            -- Infinite jump logic
+            local plr = game:GetService("Players").LocalPlayer
+            local m = plr:GetMouse()
+        
+            m.KeyDown:Connect(function(k)
+                if _G.infinjump then
+                    if k:byte() == 32 then -- 32 corresponds to the space key
+                        local humanoid = plr.Character and plr.Character:FindFirstChildOfClass("Humanoid")
+                        if humanoid then
+                            humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
+                            task.wait(0.1) -- Prevent issues with instant state change, using task.wait instead of wait
+                            humanoid:ChangeState(Enum.HumanoidStateType.Seated)
+                        end
+                    end
+                end
+            end)
+        end
+    end)
+
+    local MiscToggle = MiscSection:AddToggle("Click to TP", {
+        Title = "Click to TP",
+        Description = "Click to TP"
+    })
+    
+    MiscToggle:OnChanged(function(Value)
+        if _G.WRDClickTeleport == nil then
+            _G.WRDClickTeleport = true
+            
+            local player = game:GetService("Players").LocalPlayer
+            local UserInputService = game:GetService("UserInputService")
+             --Wanted to avoid using mouse instance, but UIS^ is very tedious to get mouse hit position
+            local mouse = player:GetMouse()
+        
+            --Waits until the player's mouse is found
+            repeat wait() until mouse
+            
+            UserInputService.InputBegan:Connect(function(input, gameProcessed)
+                if input.UserInputType == Enum.UserInputType.MouseButton1 then
+                    --Only click teleport if the toggle is enabled
+                    if _G.WRDClickTeleport and UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) then
+                        player.Character:MoveTo(Vector3.new(mouse.Hit.x, mouse.Hit.y, mouse.Hit.z)) 
+                    end
+                end
+            end)
+        --Just toggle instead of re-executing the script
+        else
+            _G.WRDClickTeleport = not _G.WRDClickTeleport
+            --Notify
+            if _G.WRDClickTeleport then
+                game.StarterGui:SetCore("SendNotification", {Title="Kyze"; Text="Click teleport enabled"; Duration=5;})
+            else
+                game.StarterGui:SetCore("SendNotification", {Title="Kyze"; Text="Click teleport disabled"; Duration=5;})
+            end
+        end
+    end)
+
+    SilentAimSection:AddParagraph({
+        Title = "How to Use",
+        Content = "Control and Click TP"
+    })
+
 
     local AimOffsetSection = Tabs.Aimbot:AddSection("Aim Offset")
 
